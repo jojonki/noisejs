@@ -47,12 +47,28 @@
   49,192,214, 31,181,199,106,157,184, 84,204,176,115,121,50,45,127, 4,150,254,
   138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180];
   // To remove the need for index wrapping, double the permutation table length
-  var perm = new Array(512);
-  var gradP = new Array(512);
+  var noiseNum = 0;
+  var perm = [];
+  var gradP = [];
+
+  module.init = function(num) {
+    noiseNum = num;
+    for(var i = 0; i < num; i++) {
+      perm.push(new Array(512));
+      gradP.push(new Array(512));
+      module.seed(i, 0);
+    }
+  };
+
+  module.reset = function(num) {
+    perm = [];
+    gradP = [];
+    module.init(num);
+  }
 
   // This isn't a very good seeding function, but it works ok. It supports 2^16
   // different seed values. Write something better if you need more seeds.
-  module.seed = function(seed) {
+  module.seed = function(index, seed) {
     if(seed > 0 && seed < 1) {
       // Scale the seed out
       seed *= 65536;
@@ -71,12 +87,10 @@
         v = p[i] ^ ((seed>>8) & 255);
       }
 
-      perm[i] = perm[i + 256] = v;
-      gradP[i] = gradP[i + 256] = grad3[v % 12];
+      perm[index][i] = perm[index][i + 256] = v;
+      gradP[index][i] = gradP[index][i + 256] = grad3[v % 12];
     }
   };
-
-  module.seed(0);
 
   /*
   for(var i=0; i<256; i++) {
@@ -92,7 +106,11 @@
   var G3 = 1/6;
 
   // 2D simplex noise
-  module.simplex2 = function(xin, yin) {
+  module.simplex2 = function(index, xin, yin) {
+    if(index >= noiseNum) {
+      console.warn('index', index, 'must be smaller than noiseNum', noiseNum);
+      return;
+    }
     var n0, n1, n2; // Noise contributions from the three corners
     // Skew the input space to determine which simplex cell we're in
     var s = (xin+yin)*F2; // Hairy factor for 2D
@@ -119,9 +137,9 @@
     // Work out the hashed gradient indices of the three simplex corners
     i &= 255;
     j &= 255;
-    var gi0 = gradP[i+perm[j]];
-    var gi1 = gradP[i+i1+perm[j+j1]];
-    var gi2 = gradP[i+1+perm[j+1]];
+    var gi0 = gradP[index][i+perm[index][j]];
+    var gi1 = gradP[index][i+i1+perm[index][j+j1]];
+    var gi2 = gradP[index][i+1+perm[index][j+1]];
     // Calculate the contribution from the three corners
     var t0 = 0.5 - x0*x0-y0*y0;
     if(t0<0) {
@@ -150,7 +168,11 @@
   };
 
   // 3D simplex noise
-  module.simplex3 = function(xin, yin, zin) {
+  module.simplex3 = function(index, xin, yin, zin) {
+    if(index >= noiseNum) {
+      console.warn('index', index, 'must be smaller than noiseNum', noiseNum);
+      return;
+    }
     var n0, n1, n2, n3; // Noise contributions from the four corners
 
     // Skew the input space to determine which simplex cell we're in
@@ -197,10 +219,10 @@
     i &= 255;
     j &= 255;
     k &= 255;
-    var gi0 = gradP[i+   perm[j+   perm[k   ]]];
-    var gi1 = gradP[i+i1+perm[j+j1+perm[k+k1]]];
-    var gi2 = gradP[i+i2+perm[j+j2+perm[k+k2]]];
-    var gi3 = gradP[i+ 1+perm[j+ 1+perm[k+ 1]]];
+    var gi0 = gradP[index][i+   perm[index][j+   perm[index][k   ]]];
+    var gi1 = gradP[index][i+i1+perm[index][j+j1+perm[index][k+k1]]];
+    var gi2 = gradP[index][i+i2+perm[index][j+j2+perm[index][k+k2]]];
+    var gi3 = gradP[index][i+ 1+perm[index][j+ 1+perm[index][k+ 1]]];
 
     // Calculate the contribution from the four corners
     var t0 = 0.6 - x0*x0 - y0*y0 - z0*z0;
@@ -248,7 +270,11 @@
   }
 
   // 2D Perlin Noise
-  module.perlin2 = function(x, y) {
+  module.perlin2 = function(index, x, y) {
+    if(index >= noiseNum) {
+      console.warn('index', index, 'must be smaller than noiseNum', noiseNum);
+      return;
+    }
     // Find unit grid cell containing point
     var X = Math.floor(x), Y = Math.floor(y);
     // Get relative xy coordinates of point within that cell
@@ -257,10 +283,10 @@
     X = X & 255; Y = Y & 255;
 
     // Calculate noise contributions from each of the four corners
-    var n00 = gradP[X+perm[Y]].dot2(x, y);
-    var n01 = gradP[X+perm[Y+1]].dot2(x, y-1);
-    var n10 = gradP[X+1+perm[Y]].dot2(x-1, y);
-    var n11 = gradP[X+1+perm[Y+1]].dot2(x-1, y-1);
+    var n00 = gradP[index][X+perm[index][Y]].dot2(x, y);
+    var n01 = gradP[index][X+perm[index][Y+1]].dot2(x, y-1);
+    var n10 = gradP[index][X+1+perm[index][Y]].dot2(x-1, y);
+    var n11 = gradP[index][X+1+perm[index][Y+1]].dot2(x-1, y-1);
 
     // Compute the fade curve value for x
     var u = fade(x);
@@ -273,7 +299,11 @@
   };
 
   // 3D Perlin Noise
-  module.perlin3 = function(x, y, z) {
+  module.perlin3 = function(index, x, y, z) {
+    if(index >= noiseNum) {
+      console.warn('index', index, 'must be smaller than noiseNum', noiseNum);
+      return;
+    }
     // Find unit grid cell containing point
     var X = Math.floor(x), Y = Math.floor(y), Z = Math.floor(z);
     // Get relative xyz coordinates of point within that cell
@@ -282,14 +312,14 @@
     X = X & 255; Y = Y & 255; Z = Z & 255;
 
     // Calculate noise contributions from each of the eight corners
-    var n000 = gradP[X+  perm[Y+  perm[Z  ]]].dot3(x,   y,     z);
-    var n001 = gradP[X+  perm[Y+  perm[Z+1]]].dot3(x,   y,   z-1);
-    var n010 = gradP[X+  perm[Y+1+perm[Z  ]]].dot3(x,   y-1,   z);
-    var n011 = gradP[X+  perm[Y+1+perm[Z+1]]].dot3(x,   y-1, z-1);
-    var n100 = gradP[X+1+perm[Y+  perm[Z  ]]].dot3(x-1,   y,   z);
-    var n101 = gradP[X+1+perm[Y+  perm[Z+1]]].dot3(x-1,   y, z-1);
-    var n110 = gradP[X+1+perm[Y+1+perm[Z  ]]].dot3(x-1, y-1,   z);
-    var n111 = gradP[X+1+perm[Y+1+perm[Z+1]]].dot3(x-1, y-1, z-1);
+    var n000 = gradP[index][X+  perm[index][Y+  perm[index][Z  ]]].dot3(x,   y,     z);
+    var n001 = gradP[index][X+  perm[index][Y+  perm[index][Z+1]]].dot3(x,   y,   z-1);
+    var n010 = gradP[index][X+  perm[index][Y+1+perm[index][Z  ]]].dot3(x,   y-1,   z);
+    var n011 = gradP[index][X+  perm[index][Y+1+perm[index][Z+1]]].dot3(x,   y-1, z-1);
+    var n100 = gradP[index][X+1+perm[index][Y+  perm[index][Z  ]]].dot3(x-1,   y,   z);
+    var n101 = gradP[index][X+1+perm[index][Y+  perm[index][Z+1]]].dot3(x-1,   y, z-1);
+    var n110 = gradP[index][X+1+perm[index][Y+1+perm[index][Z  ]]].dot3(x-1, y-1,   z);
+    var n111 = gradP[index][X+1+perm[index][Y+1+perm[index][Z+1]]].dot3(x-1, y-1, z-1);
 
     // Compute the fade curve value for x, y, z
     var u = fade(x);
